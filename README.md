@@ -33,9 +33,91 @@
 
 ---
 
+## 📦 Installation | 安装
+
+**Quick install for Claude Code and Codex agents**  
+**Claude Code 和 Codex 智能体快速安装**
+
+```bash
+# Clone and install | 克隆并安装
+git clone https://github.com/your-repo/pdf2md-skill.git
+cd pdf2md-skill
+./install.sh  # Auto-detects your agent
+```
+
+📚 **See [INSTALL.md](INSTALL.md) for detailed instructions**  
+📚 **详细安装说明请查看 [INSTALL.md](INSTALL.md)**
+
+---
+
 ## 🚀 Quick Start | 快速开始
 
-### 1️⃣ Setup Environment | 设置环境
+### 🤖 Agent Usage | 智能体使用
+
+**Use with Claude Code or Codex for conversational PDF conversion**  
+**使用 Claude Code 或 Codex 进行对话式 PDF 转换**
+
+#### Example 1: Basic Conversion | 基本转换
+
+```
+You: 将 ~/PDFs/raw/paper.pdf 转换为 Markdown
+You: Convert ~/PDFs/raw/paper.pdf to Markdown
+
+Agent: [Automatically uses pdf2md skills to convert the PDF]
+Agent: ✅ 转换完成！输出保存在 ~/PDFs/processed/paper/
+```
+
+#### Example 2: Batch Processing | 批量处理
+
+```
+You: 将 ~/PDFs/raw/ 下的所有 PDF 转换为 Markdown
+You: Convert all PDFs in ~/PDFs/raw/ to Markdown
+
+Agent: [Processes each PDF sequentially or in parallel]
+Agent: ✅ 完成！已处理 11 个 PDF 文件
+```
+
+#### Example 3: Parallel Processing | 并行处理
+
+```
+You: 使用 24 个并行进程处理 ~/PDFs/raw/Booeshaghi_2021.pdf，保留原始图片
+You: Process ~/PDFs/raw/Booeshaghi_2021.pdf with 24 parallel workers, keep original images
+
+Agent: [Configures parallel processing and runs pipeline]
+Agent: ✅ 处理完成！38 个面板，保留 14 张原始图片
+```
+
+#### Example 4: Error Handling & Retry | 错误处理与重试
+
+```
+You: 检查处理状态，如果有失败的 PDF，重新处理它们
+You: Check processing status and retry any failed PDFs
+
+Agent: [Checks logs, identifies failures, retries failed conversions]
+Agent: ✅ 所有 PDF 处理成功
+```
+
+#### Example 5: Subagent Delegation | 子智能体委托
+
+```
+You: 主任务完成后，将剩余的 6 个 PDF 分配给 6 个子智能体并行处理
+You: After the main task completes, delegate the remaining 6 PDFs to 6 subagents for parallel processing
+
+Agent: [Spawns 6 subagents, each handling one PDF]
+Agent: ✅ 所有子任务完成
+```
+
+**💡 Tip:** The agent automatically detects and uses the pdf2md skills based on your request!  
+**💡 提示：** 智能体根据你的请求自动检测并使用 pdf2md 技能！
+
+---
+
+### 💻 CLI Usage | 命令行使用
+
+**Direct command-line usage for automation and scripts**  
+**用于自动化和脚本的直接命令行使用**
+
+#### 1️⃣ Setup Environment | 设置环境
 
 ```bash
 # Activate conda environment | 激活 conda 环境
@@ -45,7 +127,7 @@ conda activate pdf2md
 # See skills/setup/SKILL.md for detailed instructions
 ```
 
-### 2️⃣ Configure API | 配置 API
+#### 2️⃣ Configure API | 配置 API
 
 ```bash
 # Copy config template | 复制配置模板
@@ -55,7 +137,7 @@ cp config.example.yaml config.yaml
 # See skills/config/SKILL.md for provider options
 ```
 
-### 3️⃣ Run Pipeline | 运行流程
+#### 3️⃣ Run Pipeline | 运行流程
 
 ```bash
 # Basic usage | 基本用法
@@ -67,6 +149,12 @@ python examples/pipeline.py paper.pdf -o output/
 
 # Keep original images | 保留原始图片
 python examples/pipeline.py paper.pdf -o output/ --keep-original-images
+
+# Batch processing | 批量处理
+for pdf in ~/PDFs/raw/*.pdf; do
+    name=$(basename "$pdf" .pdf)
+    python examples/pipeline.py "$pdf" -o "~/PDFs/processed/$name/"
+done
 ```
 
 ---
