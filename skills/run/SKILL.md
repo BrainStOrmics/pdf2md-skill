@@ -113,11 +113,75 @@ After generating the output MD, verify:
 **Expected error rates**: ~10% VLM 400 errors, ~3-5% JSON parse failures. These are normal.
 For papers >50 pages or >200 panels, expect timeouts — split into smaller chunks.
 
+## Automatic Retry Workflow | 自动重试流程
+
+**IMPORTANT: Always run automatic retry after pipeline completion!**  
+**重要：在 pipeline 完成后始终运行自动重试！**
+
+After running the standard pipeline, the agent MUST automatically:
+
+1. **Check for failures | 检查失败**
+   ```bash
+   python examples/check_failures.py <output_dir>
+   ```
+
+2. **If failures exist, retry them | 如果存在失败，重试它们**
+   ```bash
+   python examples/retry_failures.py --parallel 5 <output_dir>
+   ```
+
+3. **Re-check and report | 重新检查并报告**
+   ```bash
+   python examples/check_failures.py <output_dir>
+   ```
+
+4. **If still failures, retry again (up to 3 times total) | 如果仍有失败，再次重试（最多 3 次）**
+
+### Agent Instructions | 智能体指令
+
+When the user asks to convert a PDF, the agent should:
+
+1. Run the standard pipeline
+2. **Automatically check for failures** (do NOT ask the user)
+3. **Automatically retry failures** (do NOT ask the user)
+4. Report the final success rate
+5. Only if failures persist after 3 retries, inform the user
+
+**Example Agent Behavior | 智能体行为示例**
+
+```
+User: Convert paper.pdf to Markdown
+
+Agent:
+1. Runs: python examples/pipeline.py paper.pdf -o output/
+2. Runs: python examples/check_failures.py output/
+   → Found 15 failures
+3. Runs: python examples/retry_failures.py --parallel 5 output/
+   → Fixed 12, 3 still failed
+4. Runs: python examples/retry_failures.py --parallel 5 output/
+   → Fixed 2, 1 still failed
+5. Runs: python examples/retry_failures.py --parallel 5 output/
+   → Fixed 1, 0 failed
+6. Reports: ✅ Conversion complete! 100% success rate after 3 retries.
+```
+
+**Key Points | 关键点**
+
+- ✅ Always check for failures automatically
+- ✅ Always retry failures automatically
+- ✅ Use parallel processing for faster retries
+- ✅ Retry up to 3 times
+- ✅ Only inform user if failures persist after all retries
+- ❌ Do NOT ask user "should I retry?" - just do it
+- ❌ Do NOT stop after first pipeline run if there are failures
+
 ## Reference Files
 
 | File | Purpose |
 |------|---------|
 | `examples/pipeline.py` | Complete reference implementation (single-pass, CLI arguments) |
+| `examples/check_failures.py` | Check for failed panel extractions |
+| `examples/retry_failures.py` | Retry failed panels with parallel processing |
 | `references/figure_rules.md` | 9-rule panel classification prompt (Chinese) |
 | `references/architecture.md` | Implementation details (text truncation fix, VLM response handling, memory management) |
 | `references/troubleshooting.md` | Problem-solution lookup table |

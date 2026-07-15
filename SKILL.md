@@ -9,13 +9,14 @@ Convert CNS-level research paper PDFs into structured Markdown, with scientific 
 
 ## Sub-Skills
 
-This project is organized into three sub-skills:
+This project is organized into four sub-skills:
 
 | Skill | Path | Purpose | Trigger When |
 |-------|------|---------|-------------|
 | **pdf2md-setup** | `skills/setup/SKILL.md` | Environment configuration | Set up conda/uv env, install deps, configure HF mirror, download models |
 | **pdf2md-config** | `skills/config/SKILL.md` | VLM API & workflow configuration | Configure API keys, change VLM models, adjust CLI parameters |
 | **pdf2md-run** | `skills/run/SKILL.md` | Pipeline execution | Convert a PDF, run the pipeline, check output quality |
+| **pdf2md-retry** | `skills/retry/SKILL.md` | Retry failed panels | Fix network errors, retry failed panel extractions, recover from API timeouts |
 
 ## Quick Start
 
@@ -40,13 +41,16 @@ pdf2md-skill/
 ├── skills/
 │   ├── setup/SKILL.md        # Environment setup sub-skill
 │   ├── config/SKILL.md       # VLM & workflow config sub-skill
-│   └── run/SKILL.md          # Pipeline execution sub-skill
+│   ├── run/SKILL.md          # Pipeline execution sub-skill
+│   └── retry/SKILL.md        # Retry failed panels sub-skill
 ├── references/
 │   ├── architecture.md       # Implementation details
 │   ├── figure_rules.md       # 9-rule VLM classification prompt
 │   └── troubleshooting.md    # Problem-solution lookup
 └── examples/
-    └── pipeline.py           # Reference implementation (~620 lines)
+    ├── pipeline.py           # Reference implementation (~620 lines)
+    ├── check_failures.py     # Check for failed panel extractions
+    └── retry_failures.py     # Retry failed panels with VLM API
 ```
 
 ## References
@@ -54,7 +58,10 @@ pdf2md-skill/
 - `skills/setup/SKILL.md` — Environment installation and hardware requirements
 - `skills/config/SKILL.md` — VLM API configuration and CLI parameters
 - `skills/run/SKILL.md` — 7-step pipeline execution, quality checks, failure strategies
+- `skills/retry/SKILL.md` — Retry failed panel extractions, fix network errors
 - `references/figure_rules.md` — 9-rule panel classification prompt
 - `references/architecture.md` — Implementation details (text truncation fix, VLM response handling, memory management)
 - `references/troubleshooting.md` — Problem-solution table
 - `examples/pipeline.py` — Complete reference implementation
+- `examples/check_failures.py` — Check for failed panel extractions
+- `examples/retry_failures.py` — Retry failed panels with parallel processing

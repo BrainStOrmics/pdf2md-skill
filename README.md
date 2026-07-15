@@ -27,9 +27,80 @@
   Process multiple panels simultaneously for faster conversion (10x speedup)  
   同时处理多个面板，加快转换速度（10倍加速）
 
+- 🔄 **Automatic Error Recovery** | 自动错误恢复  
+  Automatically detect and retry failed panels due to network errors (up to 3 times)  
+  自动检测并重试因网络错误失败的面板（最多 3 次）
+
 - 🛠️ **Modular Pipeline** | 模块化流程  
   7-step pipeline with checkpoint support for resuming interrupted runs  
   7 步流程，支持断点续传
+
+- 🤖 **Agent-Ready** | 智能体就绪  
+  Fully automatic workflow: pipeline → check → retry → report, no manual intervention needed  
+  全自动工作流：pipeline → 检查 → 重试 → 报告，无需人工干预
+
+---
+
+## 🎯 Automatic Workflow | 自动化工作流
+
+**The agent handles everything automatically - just ask to convert a PDF!**  
+**智能体自动处理一切 - 只需要求转换 PDF！**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  User Request: "Convert paper.pdf to Markdown"              │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Step 1: Run Pipeline                                       │
+│  python examples/pipeline.py paper.pdf -o output/           │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Step 2: Check Failures (Automatic)                         │
+│  python examples/check_failures.py output/                  │
+│  → Found 15 failures                                        │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Step 3: Retry Failures (Automatic, Parallel)               │
+│  python examples/retry_failures.py --parallel 5 output/     │
+│  → Fixed 12, 3 still failed                                 │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Step 4: Retry Again (Up to 3 times)                        │
+│  → Fixed 2, 1 still failed                                  │
+│  → Fixed 1, 0 failed ✅                                     │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Step 5: Report Results                                     │
+│  ✅ Conversion complete! 100% success rate                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Benefits | 关键优势:**
+- ✅ **Zero Manual Intervention** | 零人工干预  
+  No need to check for failures or manually retry  
+  无需检查失败或手动重试
+
+- ✅ **Parallel Retries** | 并行重试  
+  Uses `--parallel 5` for faster recovery  
+  使用 `--parallel 5` 加快恢复速度
+
+- ✅ **Smart Retry Logic** | 智能重试逻辑  
+  Up to 3 retry attempts, only reports if still failing  
+  最多 3 次重试，仅在仍然失败时报告
+
+- ✅ **Network Error Handling** | 网络错误处理  
+  Automatically recovers from ~10-20% typical network errors  
+  自动恢复约 10-20% 的典型网络错误
 
 ---
 
@@ -63,9 +134,23 @@ cd pdf2md-skill
 You: 将 ~/PDFs/raw/paper.pdf 转换为 Markdown
 You: Convert ~/PDFs/raw/paper.pdf to Markdown
 
-Agent: [Automatically uses pdf2md skills to convert the PDF]
-Agent: ✅ 转换完成！输出保存在 ~/PDFs/processed/paper/
+Agent:
+  1. [Runs pipeline] python examples/pipeline.py paper.pdf -o output/
+  2. [Checks failures] python examples/check_failures.py output/
+     → Found 15 failures
+  3. [Retries automatically] python examples/retry_failures.py --parallel 5 output/
+     → Fixed 12, 3 still failed
+  4. [Retries again] python examples/retry_failures.py --parallel 5 output/
+     → Fixed 2, 1 still failed
+  5. [Retries again] python examples/retry_failures.py --parallel 5 output/
+     → Fixed 1, 0 failed
+
+Agent: ✅ 转换完成！100% 成功率（经过 3 次自动重试）
+Agent: ✅ Conversion complete! 100% success rate (after 3 automatic retries)
 ```
+
+**💡 Agent automatically retries failures - no need to ask!**  
+**💡 智能体会自动重试失败 - 无需询问！**
 
 #### Example 2: Batch Processing | 批量处理
 
@@ -73,8 +158,13 @@ Agent: ✅ 转换完成！输出保存在 ~/PDFs/processed/paper/
 You: 将 ~/PDFs/raw/ 下的所有 PDF 转换为 Markdown
 You: Convert all PDFs in ~/PDFs/raw/ to Markdown
 
-Agent: [Processes each PDF sequentially or in parallel]
-Agent: ✅ 完成！已处理 11 个 PDF 文件
+Agent:
+  1. [Processes each PDF with pipeline]
+  2. [Automatically checks and retries each PDF]
+  3. [Reports final results]
+
+Agent: ✅ 完成！已处理 11 个 PDF 文件，所有失败已自动修复
+Agent: ✅ Complete! Processed 11 PDFs, all failures automatically fixed
 ```
 
 #### Example 3: Parallel Processing | 并行处理
@@ -157,6 +247,40 @@ for pdf in ~/PDFs/raw/*.pdf; do
 done
 ```
 
+#### 4️⃣ Error Recovery & Retry | 错误恢复与重试
+
+**Check for failed panels | 检查失败的面板**
+
+```bash
+# Check all processed PDFs | 检查所有已处理的 PDF
+python examples/check_failures.py ~/PDFs/processed/
+
+# Check specific PDF | 检查特定 PDF
+python examples/check_failures.py ~/PDFs/processed/Tang_2025/
+```
+
+**Retry failed panels | 重试失败的面板**
+
+```bash
+# Retry all failures | 重试所有失败
+python examples/retry_failures.py ~/PDFs/processed/
+
+# Retry with parallel processing | 使用并行处理重试
+python examples/retry_failures.py --parallel 5 ~/PDFs/processed/
+
+# Retry specific PDF | 重试特定 PDF
+python examples/retry_failures.py --pdf Tang_2025 ~/PDFs/processed/
+
+# Dry run (show what would be retried) | 试运行（显示将要重试的内容）
+python examples/retry_failures.py --dry-run ~/PDFs/processed/
+```
+
+**💡 Tip:** Network errors (~10-20%) are normal. Use retry to fix failed panels without reprocessing the entire PDF!  
+**💡 提示：** 网络错误（~10-20%）是正常的。使用重试功能修复失败的面板，无需重新处理整个 PDF！
+
+📚 **See [skills/retry/SKILL.md](skills/retry/SKILL.md) for detailed retry guide**  
+📚 **详细重试指南请查看 [skills/retry/SKILL.md](skills/retry/SKILL.md)**
+
 ---
 
 ## 📋 Pipeline Overview | 流程概览
@@ -199,11 +323,14 @@ done
 pdf2md-skill/
 ├── examples/
 │   ├── pipeline.py           # Main pipeline script | 主流程脚本
+│   ├── check_failures.py     # Check failed panels | 检查失败面板
+│   ├── retry_failures.py     # Retry failed panels | 重试失败面板
 │   └── resume_step6.py       # Resume interrupted runs | 断点续传脚本
 ├── skills/
 │   ├── setup/SKILL.md        # Environment setup | 环境设置
 │   ├── config/SKILL.md       # Configuration guide | 配置指南
-│   └── run/SKILL.md          # Pipeline execution | 流程执行
+│   ├── run/SKILL.md          # Pipeline execution | 流程执行
+│   └── retry/SKILL.md        # Retry failed panels | 重试失败面板
 ├── references/
 │   ├── figure_rules.md       # 9-rule classification prompt | 9规则分类提示
 │   ├── architecture.md       # Implementation details | 实现细节
@@ -306,6 +433,50 @@ Edit `references/figure_rules.md` to customize the 9-rule classification prompt 
 
 ---
 
+## 📖 Quick Reference | 快速参考
+
+### For Agent Users | 智能体用户
+
+```
+Just ask: "Convert paper.pdf to Markdown"
+Agent will: Pipeline → Check → Retry (3x) → Report ✅
+```
+
+### For CLI Users | 命令行用户
+
+```bash
+# 1. Setup | 设置
+conda activate pdf2md
+
+# 2. Convert | 转换
+python examples/pipeline.py paper.pdf -o output/
+
+# 3. Check & Retry | 检查并重试
+python examples/check_failures.py output/
+python examples/retry_failures.py --parallel 5 output/
+```
+
+### Common Commands | 常用命令
+
+```bash
+# Convert with parallel processing | 并行转换
+PDF2MD_PARALLEL_WORKERS=20 python examples/pipeline.py paper.pdf -o output/
+
+# Keep original images | 保留原始图片
+python examples/pipeline.py paper.pdf -o output/ --keep-original-images
+
+# Batch convert | 批量转换
+for pdf in ~/PDFs/raw/*.pdf; do python examples/pipeline.py "$pdf" -o "~/PDFs/processed/$(basename "$pdf" .pdf)/"; done
+
+# Check failures | 检查失败
+python examples/check_failures.py ~/PDFs/processed/
+
+# Retry all failures | 重试所有失败
+python examples/retry_failures.py --parallel 10 ~/PDFs/processed/
+```
+
+---
+
 ## 🐛 Troubleshooting | 故障排除
 
 ### Common Issues | 常见问题
@@ -336,7 +507,8 @@ Detailed documentation is organized into sub-skills:
 |-------|------|---------|
 | 🛠️ Setup | `skills/setup/SKILL.md` | Environment configuration |
 | ⚙️ Config | `skills/config/SKILL.md` | API & parameter configuration |
-| ▶️ Run | `skills/run/SKILL.md` | Pipeline execution guide |
+| ▶️ Run | `skills/run/SKILL.md` | Pipeline execution with automatic retry |
+| 🔄 Retry | `skills/retry/SKILL.md` | Automatic error recovery and retry |
 
 ---
 
