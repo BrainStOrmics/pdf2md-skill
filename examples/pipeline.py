@@ -5,6 +5,7 @@ import os, sys, json, base64, re, requests, io, shutil, argparse
 from pathlib import Path
 import numpy as np
 import yaml
+import concurrent.futures
 
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
@@ -27,6 +28,7 @@ def parse_args():
     )
     p.add_argument("--overwrite", action="store_true", help="Replace managed files in a non-empty output directory")
     p.add_argument("--filter-size", type=int, default=30, help="Min image size in KB (default 30)")
+    p.add_argument("--keep-original-images", action="store_true", help="Keep original pic_*.png files in images/ directory (default: delete after processing)")
     return p.parse_args()
 
 
@@ -139,6 +141,23 @@ def resize_for_vlm(img_path, max_size=1024):
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()
+
+
+def process_single_panel(panel_path, caption, prompt_template, model, api_base, api_key):
+    """Process a single panel for CSV extraction - designed for parallel execution"""
+    name = panel_path.name
+    caption = caption if isinstance(caption, str) else (str(caption) if caption else "")
+    prompt = prompt_template.replace("{caption}", caption)
+
+    img_b64 = resize_for_vlm(panel_path)
+    try:
+        resp_text = call_vlm(img_b64, prompt, model, api_base, api_key, max_tokens=4000, timeout=180)
+        if not isinstance(resp_text, str):
+            resp_text = str(resp_text)
+        parsed = extract_json(resp_text)
+        return name, parsed, None
+    except Exception as e:
+        return name, [{"fig_type": "error", "data_type": "description", "content": str(e)}], e
 
 
 def extract_json(text):
@@ -505,9 +524,14 @@ def main():
                         renamed_panels[pic_path.name] = new_name
                     break
 
-    # Clean old pic_*.png
-    for old_pic in (output_dir / "images").glob("pic_*.png"):
-        old_pic.unlink()
+    # Clean old pic_*.png (unless --keep-original-images is set)
+    if not args.keep_original_images:
+        for old_pic in (output_dir / "images").glob("pic_*.png"):
+            old_pic.unlink()
+    else:
+        kept_count = len(list((output_dir / "images").glob("pic_*.png")))
+        if kept_count > 0:
+            print(f"  Keeping {kept_count} original pic_*.png files")
 
     # Save descriptions with renamed keys
     renamed_descriptions = {}
@@ -519,30 +543,61 @@ def main():
     with open(desc_path, "w", encoding="utf-8") as f:
         json.dump(renamed_descriptions, f, ensure_ascii=False, indent=2)
 
-    # CSV extraction on each panel
+    # CSV extraction on each panel (PARALLEL)
     panel_files = sorted((output_dir / "panels").glob("*.png"))
     print(f"  Found {len(panel_files)} panels")
 
+    # Parallel processing configuration
+    MAX_PARALLEL_WORKERS = int(os.environ.get("PDF2MD_PARALLEL_WORKERS", "10"))
     csv_results = {}
-    for i, panel_path in enumerate(panel_files, 1):
-        name = panel_path.name
-        caption = renamed_descriptions.get(name, "")
-        if not isinstance(caption, str):
-            caption = str(caption) if caption else ""
-        prompt = PANEL_PROMPT.replace("{caption}", caption)
-        print(f"  [{i}/{len(panel_files)}] {name}...", end=" ", flush=True)
 
-        img_b64 = resize_for_vlm(panel_path)
-        try:
-            resp_text = call_vlm(img_b64, prompt, model, api_base, api_key, max_tokens=4000, timeout=180)
-            if not isinstance(resp_text, str):
-                resp_text = str(resp_text)
-            parsed = extract_json(resp_text)
-            csv_results[name] = parsed
-            print(f"OK ({len(parsed)} sub-figures)")
-        except Exception as e:
-            print(f"FAIL: {e}")
-            csv_results[name] = [{"fig_type": "error", "data_type": "description", "content": str(e)}]
+    if len(panel_files) > 1:
+        # Use ThreadPoolExecutor for parallel API calls
+        print(f"  Processing in parallel (max {MAX_PARALLEL_WORKERS} workers)...")
+        tasks = []
+        for panel_path in panel_files:
+            name = panel_path.name
+            caption = renamed_descriptions.get(name, "")
+            tasks.append((panel_path, caption))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL_WORKERS) as executor:
+            futures = {
+                executor.submit(
+                    process_single_panel,
+                    panel_path, caption, PANEL_PROMPT, model, api_base, api_key
+                ): panel_path.name
+                for panel_path, caption in tasks
+            }
+
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                name, result, error = future.result()
+                csv_results[name] = result
+                completed += 1
+                if error:
+                    print(f"  [{completed}/{len(panel_files)}] {name}... FAIL: {error}", flush=True)
+                else:
+                    print(f"  [{completed}/{len(panel_files)}] {name}... OK ({len(result)} sub-figures)", flush=True)
+    else:
+        # Single panel - process directly
+        for i, panel_path in enumerate(panel_files, 1):
+            name = panel_path.name
+            caption = renamed_descriptions.get(name, "")
+            caption = caption if isinstance(caption, str) else (str(caption) if caption else "")
+            prompt = PANEL_PROMPT.replace("{caption}", caption)
+            print(f"  [{i}/{len(panel_files)}] {name}...", end=" ", flush=True)
+
+            img_b64 = resize_for_vlm(panel_path)
+            try:
+                resp_text = call_vlm(img_b64, prompt, model, api_base, api_key, max_tokens=4000, timeout=180)
+                if not isinstance(resp_text, str):
+                    resp_text = str(resp_text)
+                parsed = extract_json(resp_text)
+                csv_results[name] = parsed
+                print(f"OK ({len(parsed)} sub-figures)")
+            except Exception as e:
+                print(f"FAIL: {e}")
+                csv_results[name] = [{"fig_type": "error", "data_type": "description", "content": str(e)}]
 
     # Save CSV JSON
     csv_json_path = output_dir / "panels_data.json"
