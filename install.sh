@@ -1,124 +1,163 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PDF2MD Skill Installer
-# Installs pdf2md skill for Claude Code or Codex
+# Installs the complete pdf2md Skill for Claude Code or Codex.
 
-set -e
+set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 SKILL_NAME="pdf2md"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+usage() {
+    cat <<'EOF'
+Usage: ./install.sh [claude|codex]
 
-echo -e "${BLUE}📄 PDF2MD Skill Installer${NC}"
-echo "================================"
+Options:
+  claude    Install to ~/.claude/skills/pdf2md
+  codex     Install to ~/.codex/skills/pdf2md
+  -h, --help
 
-# Detect agent type
+If no agent is specified, the installer checks for Claude Code first, then Codex.
+EOF
+}
+
 detect_agent() {
-    if [ -n "$CLAUDE_CODE" ] || command -v claude &> /dev/null; then
-        echo "claude"
-    elif command -v codex &> /dev/null; then
-        echo "codex"
+    if [[ -n "${CLAUDE_CODE:-}" ]] || command -v claude >/dev/null 2>&1; then
+        printf '%s\n' "claude"
+    elif command -v codex >/dev/null 2>&1; then
+        printf '%s\n' "codex"
     else
-        echo "unknown"
+        printf '%s\n' "unknown"
     fi
 }
 
-# Install for Claude Code
-install_claude() {
-    local target_dir="$HOME/.claude/skills"
-    echo -e "${GREEN}✓ Detected Claude Code${NC}"
-    echo "Installing to: $target_dir"
+fail() {
+    printf 'Error: %s\n' "$*" >&2
+    exit 1
+}
 
-    # Create target directory
-    mkdir -p "$target_dir"
+case "${1:-}" in
+    -h|--help)
+        usage
+        exit 0
+        ;;
+    claude)
+        agent="claude"
+        ;;
+    codex)
+        agent="codex"
+        ;;
+    "")
+        agent="$(detect_agent)"
+        ;;
+    *)
+        usage >&2
+        fail "Unsupported agent type: $1"
+        ;;
+esac
 
-    # Copy skill directories
-    echo "Copying skill files..."
-    cp -r "$SCRIPT_DIR/skills/setup" "$target_dir/"
-    cp -r "$SCRIPT_DIR/skills/config" "$target_dir/"
-    cp -r "$SCRIPT_DIR/skills/run" "$target_dir/"
+case "$agent" in
+    claude)
+        skills_root="$HOME/.claude/skills"
+        ;;
+    codex)
+        skills_root="$HOME/.codex/skills"
+        ;;
+    unknown)
+        fail "No supported agent detected. Run './install.sh [claude|codex]'."
+        ;;
+    *)
+        fail "Unsupported agent type: $agent"
+        ;;
+esac
 
-    # Copy main SKILL.md if it exists
-    if [ -f "$SCRIPT_DIR/SKILL.md" ]; then
-        cp "$SCRIPT_DIR/SKILL.md" "$target_dir/"
+required_files=(
+    "SKILL.md"
+    "config.example.yaml"
+    "skills/setup/SKILL.md"
+    "skills/config/SKILL.md"
+    "skills/run/SKILL.md"
+    "skills/retry/SKILL.md"
+    "references/figure_rules.md"
+    "references/architecture.md"
+    "references/troubleshooting.md"
+    "examples/pipeline.py"
+    "examples/check_failures.py"
+    "examples/retry_failures.py"
+    "examples/resume_step6.py"
+)
+
+for relative_path in "${required_files[@]}"; do
+    [[ -f "$SCRIPT_DIR/$relative_path" ]] \
+        || fail "Source file not found: $SCRIPT_DIR/$relative_path"
+done
+
+timestamp="$(date +%Y%m%d-%H%M%S)"
+target="$skills_root/$SKILL_NAME"
+stage="$skills_root/.$SKILL_NAME-install-$timestamp"
+backup="$skills_root/$SKILL_NAME.backup-$timestamp"
+
+cleanup() {
+    if [[ -n "${stage:-}" && -d "$stage" ]]; then
+        case "$stage" in
+            "$skills_root"/."$SKILL_NAME"-install-*) rm -rf -- "$stage" ;;
+        esac
     fi
-
-    echo -e "${GREEN}✅ Installation complete!${NC}"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Configure VLM API: Edit your config.yaml"
-    echo "  2. Activate environment: conda activate pdf2md"
-    echo "  3. Start using: Ask Claude to convert a PDF"
 }
+trap cleanup EXIT
 
-# Install for Codex
-install_codex() {
-    local target_dir="$HOME/.codex/skills"
-    echo -e "${GREEN}✓ Detected Codex${NC}"
-    echo "Installing to: $target_dir"
+mkdir -p "$skills_root"
+[[ ! -e "$stage" ]] || fail "Staging directory already exists: $stage"
+[[ ! -e "$backup" ]] || fail "Backup directory already exists: $backup"
 
-    # Create target directory
-    mkdir -p "$target_dir"
+mkdir -p \
+    "$stage/skills/setup" \
+    "$stage/skills/config" \
+    "$stage/skills/run" \
+    "$stage/skills/retry" \
+    "$stage/references" \
+    "$stage/examples"
 
-    # Copy skill directories
-    echo "Copying skill files..."
-    cp -r "$SCRIPT_DIR/skills/setup" "$target_dir/"
-    cp -r "$SCRIPT_DIR/skills/config" "$target_dir/"
-    cp -r "$SCRIPT_DIR/skills/run" "$target_dir/"
+cp "$SCRIPT_DIR/SKILL.md" "$stage/SKILL.md"
+cp "$SCRIPT_DIR/config.example.yaml" "$stage/config.example.yaml"
 
-    # Copy main SKILL.md if it exists
-    if [ -f "$SCRIPT_DIR/SKILL.md" ]; then
-        cp "$SCRIPT_DIR/SKILL.md" "$target_dir/"
+for skill in setup config run retry; do
+    cp "$SCRIPT_DIR/skills/$skill/SKILL.md" "$stage/skills/$skill/SKILL.md"
+done
+
+cp "$SCRIPT_DIR"/references/*.md "$stage/references/"
+cp "$SCRIPT_DIR"/examples/*.py "$stage/examples/"
+
+config_action="created from config.example.yaml"
+if [[ -f "$target/config.yaml" ]]; then
+    cp "$target/config.yaml" "$stage/config.yaml"
+    config_action="preserved existing config.yaml"
+else
+    cp "$SCRIPT_DIR/config.example.yaml" "$stage/config.yaml"
+fi
+
+for relative_path in "${required_files[@]}" "config.yaml"; do
+    [[ -f "$stage/$relative_path" ]] \
+        || fail "Staged file not found: $stage/$relative_path"
+done
+
+printf 'Installing %s Skill to %s\n' "$SKILL_NAME" "$target"
+
+if [[ -e "$target" ]]; then
+    mv "$target" "$backup"
+    if ! mv "$stage" "$target"; then
+        mv "$backup" "$target"
+        fail "Installation failed; previous version was restored."
     fi
+    stage=""
+    printf 'Previous version backed up to %s\n' "$backup"
+else
+    mv "$stage" "$target"
+    stage=""
+fi
 
-    echo -e "${GREEN}✅ Installation complete!${NC}"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Configure VLM API: Edit your config.yaml"
-    echo "  2. Activate environment: conda activate pdf2md"
-    echo "  3. Start using: Ask Codex to convert a PDF"
-}
+[[ -f "$target/SKILL.md" ]] || fail "Installed SKILL.md is missing."
+[[ -f "$target/config.yaml" ]] || fail "Installed config.yaml is missing."
 
-# Main installation logic
-main() {
-    local agent_type="${1:-$(detect_agent)}"
-
-    case "$agent_type" in
-        claude)
-            install_claude
-            ;;
-        codex)
-            install_codex
-            ;;
-        unknown)
-            echo -e "${RED}✗ No supported agent detected${NC}"
-            echo ""
-            echo "Please specify agent type: ./install.sh [claude|codex]"
-            echo ""
-            echo "Or manually install:"
-            echo "  cp -r skills/* ~/.claude/skills/  # For Claude Code"
-            echo "  cp -r skills/* ~/.codex/skills/   # For Codex"
-            exit 1
-            ;;
-        *)
-            echo -e "${RED}✗ Unknown agent type: $agent_type${NC}"
-            echo "Supported: claude, codex"
-            exit 1
-            ;;
-    esac
-
-    echo ""
-    echo -e "${YELLOW}📚 Documentation:${NC}"
-    echo "  - Setup guide: skills/setup/SKILL.md"
-    echo "  - Config guide: skills/config/SKILL.md"
-    echo "  - Usage guide: skills/run/SKILL.md"
-    echo "  - README: README.md"
-}
-
-# Run main with all arguments
-main "$@"
+printf 'Installation complete. config.yaml was %s.\n' "$config_action"
+printf 'Installed files: %s\n' "$target"
+printf 'Next: edit %s before running the pipeline.\n' "$target/config.yaml"

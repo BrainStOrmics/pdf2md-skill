@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path to import pipeline functions
 sys.path.insert(0, str(Path(__file__).parent))
-from pipeline import call_vlm, extract_json, load_config, load_panel_prompt
+from pipeline import call_vlm, configure_runtime, extract_json, load_config, load_panel_prompt
 
 
 def retry_single_panel(panel_path, caption, panel_prompt, model, api_base, api_key, max_retries=3):
@@ -215,9 +215,10 @@ def main():
         sys.exit(1)
 
     config = load_config(config_path)
-    model = config['vlm']['model']
-    api_base = config['vlm']['api_base']
-    api_key = config['vlm']['api_key']
+    configure_runtime(config)
+    model = config['model']
+    api_base = config['api_base']
+    api_key = config['api_key']
 
     # Load panel prompt
     panel_prompt = load_panel_prompt()

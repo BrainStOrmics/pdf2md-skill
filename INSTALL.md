@@ -12,7 +12,7 @@
 ```bash
 git clone https://github.com/your-repo/pdf2md-skill.git
 cd pdf2md-skill
-./install.sh claude
+bash install.sh claude
 ```
 
 ### For Codex | Codex 用户
@@ -20,7 +20,7 @@ cd pdf2md-skill
 ```bash
 git clone https://github.com/your-repo/pdf2md-skill.git
 cd pdf2md-skill
-./install.sh codex
+bash install.sh codex
 ```
 
 ### Auto-Detect | 自动检测
@@ -28,7 +28,7 @@ cd pdf2md-skill
 ```bash
 git clone https://github.com/your-repo/pdf2md-skill.git
 cd pdf2md-skill
-./install.sh  # Automatically detects your agent
+bash install.sh  # Automatically detects your agent
 ```
 
 ---
@@ -40,21 +40,27 @@ If the installer doesn't work, you can manually copy the skill files:
 ### Claude Code
 
 ```bash
-# Copy skill directories
-cp -r skills/setup ~/.claude/skills/
-cp -r skills/config ~/.claude/skills/
-cp -r skills/run ~/.claude/skills/
-cp SKILL.md ~/.claude/skills/
+mkdir -p ~/.claude/skills/pdf2md/skills
+mkdir -p ~/.claude/skills/pdf2md/references
+mkdir -p ~/.claude/skills/pdf2md/examples
+cp SKILL.md config.example.yaml ~/.claude/skills/pdf2md/
+cp -R skills/* ~/.claude/skills/pdf2md/skills/
+cp references/*.md ~/.claude/skills/pdf2md/references/
+cp examples/*.py ~/.claude/skills/pdf2md/examples/
+cp config.example.yaml ~/.claude/skills/pdf2md/config.yaml
 ```
 
 ### Codex
 
 ```bash
-# Copy skill directories
-cp -r skills/setup ~/.codex/skills/
-cp -r skills/config ~/.codex/skills/
-cp -r skills/run ~/.codex/skills/
-cp SKILL.md ~/.codex/skills/
+mkdir -p ~/.codex/skills/pdf2md/skills
+mkdir -p ~/.codex/skills/pdf2md/references
+mkdir -p ~/.codex/skills/pdf2md/examples
+cp SKILL.md config.example.yaml ~/.codex/skills/pdf2md/
+cp -R skills/* ~/.codex/skills/pdf2md/skills/
+cp references/*.md ~/.codex/skills/pdf2md/references/
+cp examples/*.py ~/.codex/skills/pdf2md/examples/
+cp config.example.yaml ~/.codex/skills/pdf2md/config.yaml
 ```
 
 ---
@@ -66,21 +72,19 @@ After installation, verify the skills are available:
 ### Claude Code
 
 ```bash
-# Check if skills are installed
-ls ~/.claude/skills/
-
-# Should see:
-# setup/  config/  run/  SKILL.md
+test -f ~/.claude/skills/pdf2md/SKILL.md
+test -f ~/.claude/skills/pdf2md/skills/retry/SKILL.md
+test -f ~/.claude/skills/pdf2md/examples/pipeline.py
+test -f ~/.claude/skills/pdf2md/references/figure_rules.md
 ```
 
 ### Codex
 
 ```bash
-# Check if skills are installed
-ls ~/.codex/skills/
-
-# Should see:
-# setup/  config/  run/  SKILL.md
+test -f ~/.codex/skills/pdf2md/SKILL.md
+test -f ~/.codex/skills/pdf2md/skills/retry/SKILL.md
+test -f ~/.codex/skills/pdf2md/examples/pipeline.py
+test -f ~/.codex/skills/pdf2md/references/figure_rules.md
 ```
 
 ---
@@ -91,7 +95,7 @@ ls ~/.codex/skills/
 
 ```bash
 # Create conda environment | 创建 conda 环境
-conda create -n pdf2md python=3.10
+conda create -n pdf2md python=3.11
 conda activate pdf2md
 
 # Install dependencies | 安装依赖
@@ -101,11 +105,8 @@ conda install -c conda-forge docling figpanel pymupdf pillow pyyaml numpy reques
 ### 2. Configure VLM API | 配置 VLM API
 
 ```bash
-# Copy config template | 复制配置模板
-cp config.example.yaml config.yaml
-
-# Edit config.yaml with your API credentials
-# 编辑 config.yaml 填入你的 API 凭证
+# Edit the installed config with your API credentials
+# 编辑安装目录中的 config.yaml 填入你的 API 凭证
 ```
 
 ### 3. Start Using | 开始使用
@@ -131,10 +132,7 @@ Codex: [Uses pdf2md skills to convert the PDF]
 **Solution | 解决方案**:
 ```bash
 # Re-run installer | 重新运行安装器
-./install.sh claude  # or codex
-
-# Or manually copy | 或手动复制
-cp -r skills/* ~/.claude/skills/
+bash install.sh claude  # or codex
 ```
 
 ### Issue: Conda environment not found | 问题：找不到 conda 环境

@@ -58,11 +58,16 @@ def load_config(config_path):
     if not isinstance(offline, bool):
         raise ValueError(f"'runtime.offline' must be true or false in config: {config_path}")
 
+    enable_thinking = vlm.get("enable_thinking")
+    if enable_thinking is not None and not isinstance(enable_thinking, bool):
+        raise ValueError(f"'vlm.enable_thinking' must be true or false in config: {config_path}")
+
     return {
         "model": vlm["model"].strip(),
         "api_base": vlm["api_base"].strip().rstrip("/"),
         "api_key": vlm["api_key"].strip(),
         "offline": offline,
+        "enable_thinking": enable_thinking,
     }
 
 
@@ -75,6 +80,11 @@ def configure_runtime(config):
     if config["offline"]:
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    enable_thinking = config.get("enable_thinking")
+    if enable_thinking is None:
+        os.environ.pop("PDF2MD_ENABLE_THINKING", None)
+    else:
+        os.environ["PDF2MD_ENABLE_THINKING"] = "1" if enable_thinking else "0"
 
 
 def load_panel_prompt():
@@ -118,6 +128,9 @@ def call_vlm(img_b64, prompt, model, api_base, api_key, max_tokens=300, timeout=
         ]}],
         "max_tokens": max_tokens,
     }
+    enable_thinking = os.environ.get("PDF2MD_ENABLE_THINKING")
+    if enable_thinking is not None:
+        payload["enable_thinking"] = enable_thinking == "1"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(f"{api_base}/chat/completions", json=payload, headers=headers, timeout=timeout)
     r.raise_for_status()

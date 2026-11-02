@@ -41,6 +41,7 @@ vlm:
 | `vlm.model` | Model name for the chat/completions API | `"qwen3.7-plus"`, `"gpt-4o"`, `"claude-sonnet-4-20250514"` |
 | `vlm.api_base` | Base URL of the OpenAI-compatible API endpoint | `"https://api.openai.com/v1"` |
 | `vlm.api_key` | API key for authentication | `"sk-..."` |
+| `vlm.enable_thinking` | Optional provider-specific thinking switch; omit for standard OpenAI-compatible requests | `false` |
 | `runtime.offline` | If `true`, blocks all network access to HF (use after models are downloaded) | `false` / `true` |
 
 ### Supported VLM Providers
