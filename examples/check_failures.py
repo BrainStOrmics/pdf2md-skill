@@ -28,10 +28,13 @@ def check_failures(processed_dir):
     pdf_stats = {}
     error_types = defaultdict(int)
 
-    # Scan all PDF directories
-    for pdf_dir in sorted(processed_dir.iterdir()):
-        if not pdf_dir.is_dir():
-            continue
+    if (processed_dir / "panels_data.json").is_file():
+        pdf_dirs = [processed_dir]
+    else:
+        pdf_dirs = sorted(path for path in processed_dir.iterdir() if path.is_dir())
+
+    # Scan PDF output directories
+    for pdf_dir in pdf_dirs:
 
         panels_data_path = pdf_dir / "panels_data.json"
         if not panels_data_path.exists():

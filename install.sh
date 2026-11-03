@@ -84,6 +84,9 @@ required_files=(
     "examples/check_failures.py"
     "examples/retry_failures.py"
     "examples/resume_step6.py"
+    "examples/assemble_md.py"
+    "examples/run_manifest.py"
+    "examples/vlm_client.py"
 )
 
 for relative_path in "${required_files[@]}"; do

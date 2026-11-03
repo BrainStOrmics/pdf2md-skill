@@ -6,72 +6,69 @@ This pipeline processes the entire PDF in one pass to preserve table context.
 
 There is no automatic low-memory fallback. If single-pass processing runs out of memory, stop the run and split the input PDF externally. Process each resulting PDF separately; the pipeline does not merge chunked outputs.
 
-## Figure Numbering After Filtering
+## Run Manifest and Stages
 
-When images are filtered out, use **original global indices** for figure numbering, NOT sequential positions. Otherwise figure numbers shift and panels map to wrong figures.
+`run_manifest.json` is the durable state for a Conversion Run. It records:
 
-```python
-# Correct: use original indices from pictures list
-for pic_idx, _, _ in pictures:
-    if pic_idx < len(parts) - 1:
-        pic_to_fig[pic_idx] = figure_num
-        figure_num += 1
+- Input PDF path and SHA-256
+- Stage status
+- Parsed Markdown and original picture list
+- Filtered picture list and bad-table references
+- Figure/panel mapping and descriptions
+- Extracted table Markdown
+- Per-panel checkpoint status
+- VLM usage
 
-# Wrong: sequential positions (breaks after filtering)
-for i in range(len(pictures)):
-    pic_to_fig[i] = figure_num  # DON'T DO THIS
-```
+Stages are restartable: `parse`, `filter`, `panels`, `descriptions`, `tables`, `prepare`, `extract`, and `assemble`. `pipeline.py --resume` skips completed Stages and only retries missing or failed panels.
+
+All state files are written through a temporary file and `os.replace`, so an interrupted write cannot leave a partially serialized JSON file.
+
+## Figure and Picture Indices
+
+Two indices are retained:
+
+- `docling_index` identifies the original picture and its `<!-- image -->` placeholder.
+- `picture_index` is the sequential position after filtering and determines `Figure{N}`.
+
+The assembler uses `docling_index` to rebuild text around filtered placeholders and `picture_index` to order figures. This prevents text truncation without losing the relationship between a Figure and its panels.
+
+Docling can return `partial_success` after page-level preprocessing failures. The pipeline treats every status other than `success` as a failed `parse` Stage, records the errors in the manifest, and stops instead of assembling an incomplete document.
 
 ## Text Truncation Fix (3-Step)
 
-When images are filtered out, docling's `<!-- image -->` placeholders still exist. The `parts` array has N+1 elements for N original images. After filtering, `pic_idx` values still point to original positions, causing text to be skipped (e.g., title, authors, abstract on page 1).
+Docling emits one `<!-- image -->` placeholder per original picture. When a picture is filtered out, `assemble_md.py` merges that placeholder's following text into the previous part. The filtered figures are then inserted in sequential order using their persisted `docling_index`.
 
-**The fix has 3 parts:**
+This keeps titles, authors, abstracts, middle text, and references continuous even when many decorative images are removed.
 
-1. **Rebuild `parts` array**: merge text for filtered images into the previous part
-2. **Remap `pic_idx`** in `pictures` to sequential (0, 1, 2, ...) matching the new `parts`
-3. **Remap downstream dicts** (`figure_panels`, `relabel_map`) to use new indices
+## VLM Client
 
-```python
-parts = md.split("<!-- image -->")
+`vlm_client.py` is the single Interface for vision-model calls. It owns:
 
-# Step A: Rebuild parts - merge text for filtered images
-kept_indices = set(i for i, _, _ in pictures)
-new_parts = [parts[0]]  # Always keep first part (text before any image)
-for orig_idx in range(1, len(parts)):
-    img_idx = orig_idx - 1  # Which image this part boundary corresponds to
-    if img_idx in kept_indices:
-        new_parts.append(parts[orig_idx])
-    else:
-        new_parts[-1] = new_parts[-1] + parts[orig_idx]  # Merge filtered image's text
-parts = new_parts
+- OpenAI-compatible request payload construction
+- Optional `enable_thinking`
+- String/list/dict response normalization
+- Retry with exponential backoff for 429, 5xx, timeouts, empty responses, and malformed JSON
+- JSON extraction and required panel fields
+- Token usage accounting
 
-# Step B: Remap picture indices to sequential
-old_to_new_idx = {}
-new_pictures = []
-for new_idx, (old_idx, pic, path) in enumerate(pictures):
-    old_to_new_idx[old_idx] = new_idx
-    new_pictures.append((new_idx, pic, path))
-pictures = new_pictures
+Callers only request text or a validated JSON array. Provider-specific behavior and response repair stay inside this Module.
 
-# Step C: Remap downstream dicts
-figure_panels = {old_to_new_idx[k]: v for k, v in figure_panels.items() if k in old_to_new_idx}
-relabel_map = {old_to_new_idx[k]: v for k, v in relabel_map.items() if k in old_to_new_idx}
-```
+## Markdown Assembler and Quality Gate
 
-After this, `pic_to_fig` and the MD assembly loop use the new sequential indices correctly.
+`assemble_md.py` is the only Markdown assembler. Normal runs and retries both call it.
+
+The quality gate writes `quality_report.json` and checks:
+
+- Missing image links
+- Unresolved `<!-- image -->` placeholders
+- Panel error entries
+- Panels without extraction results or descriptions
+- Empty or unexpectedly short Markdown
+- Missing references near the end of the document
 
 ## VLM API Response Handling
 
-The API may return content as string, list, or dict. Always handle all three:
-
-```python
-content = resp["choices"][0]["message"]["content"]
-if isinstance(content, list):
-    content = "\n".join(item.get("text", "") for item in content if isinstance(item, dict) and item.get("type") == "text")
-elif isinstance(content, dict):
-    content = content.get("text", str(content))
-```
+The API may return content as a string, list, or dictionary. `VLMClient.normalize_content()` handles all three formats before callers receive text.
 
 ## Memory Management
 
@@ -81,6 +78,8 @@ elif isinstance(content, dict):
 
 ## Error Handling
 
-- Network errors (503, proxy): the affected VLM result is recorded as failed; fix connectivity and rerun
+- Network errors (429, 5xx, proxy): `VLMClient` retries with exponential backoff
+- Empty or malformed responses: retried and schema-validated
 - `std::bad_alloc`: stop and reduce the input PDF size or use a machine with more memory
-- JSON parse failures: record as error entry, continue with remaining panels
+- Persistent panel failure: record an error entry and update `run_manifest.json`
+- Interrupted extraction: resume from the latest per-panel checkpoint

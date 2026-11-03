@@ -21,8 +21,6 @@ Example:
 
 import json
 import sys
-import os
-import base64
 import time
 import argparse
 from pathlib import Path
@@ -30,46 +28,28 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path to import pipeline functions
 sys.path.insert(0, str(Path(__file__).parent))
-from pipeline import call_vlm, configure_runtime, extract_json, load_config, load_panel_prompt
+from assemble_md import assemble_and_validate
+from pipeline import configure_runtime, load_config, load_panel_prompt
+from run_manifest import RunManifest, write_json_atomic
+from vlm_client import VLMClient
 
 
-def retry_single_panel(panel_path, caption, panel_prompt, model, api_base, api_key, max_retries=3):
+def retry_single_panel(panel_path, caption, panel_prompt, client):
     """
     Retry a single panel extraction.
 
     Returns:
         tuple: (success: bool, result: list or None, error_msg: str or None)
     """
-    for attempt in range(max_retries):
-        try:
-            # Encode image
-            with open(panel_path, 'rb') as f:
-                img_data = f.read()
-            img_b64 = base64.b64encode(img_data).decode('utf-8')
-
-            # Prepare prompt
-            prompt = panel_prompt.replace('{caption}', caption)
-
-            # Call VLM
-            response = call_vlm(img_b64, prompt, model, api_base, api_key, max_tokens=4000, timeout=180)
-
-            # Extract JSON
-            result = extract_json(response)
-
-            return True, result, None
-
-        except Exception as e:
-            error_msg = str(e)
-            if attempt < max_retries - 1:
-                # Wait before retry
-                time.sleep(1)
-            else:
-                return False, None, error_msg
-
-    return False, None, "Max retries exceeded"
+    try:
+        prompt = panel_prompt.replace('{caption}', caption)
+        result = client.analyze_json_array(panel_path, prompt, max_tokens=4000, timeout=180)
+        return True, result, None
+    except Exception as e:
+        return False, None, str(e)
 
 
-def process_pdf(pdf_dir, panel_prompt, model, api_base, api_key, args):
+def process_pdf(pdf_dir, panel_prompt, client, args):
     """Process a single PDF directory."""
     pdf_name = pdf_dir.name
     panels_data_path = pdf_dir / "panels_data.json"
@@ -122,6 +102,7 @@ def process_pdf(pdf_dir, panel_prompt, model, api_base, api_key, args):
     success_count = 0
     fail_count = 0
     retry_errors = []
+    usage_before = client.snapshot_usage()
 
     def retry_panel_task(panel_name):
         panel_path = panels_dir / panel_name
@@ -132,9 +113,7 @@ def process_pdf(pdf_dir, panel_prompt, model, api_base, api_key, args):
         if not isinstance(caption, str):
             caption = ""
 
-        success, result, error = retry_single_panel(
-            panel_path, caption, panel_prompt, model, api_base, api_key, args.max_retries
-        )
+        success, result, error = retry_single_panel(panel_path, caption, panel_prompt, client)
 
         return panel_name, success, result, error
 
@@ -182,11 +161,39 @@ def process_pdf(pdf_dir, panel_prompt, model, api_base, api_key, args):
     # Save updated panels data
     if success_count > 0 and not args.dry_run:
         try:
-            with open(panels_data_path, 'w', encoding='utf-8') as f:
-                json.dump(panels_data, f, ensure_ascii=False, indent=2)
+            write_json_atomic(panels_data_path, panels_data)
             print(f"  💾 Updated panels_data.json ({success_count} fixed, {fail_count} still failed)")
         except Exception as e:
             print(f"  ⚠️  Could not save panels_data.json: {e}")
+
+        try:
+            manifest = RunManifest.load(pdf_dir)
+            for panel_name in failed_panels:
+                manifest.set_panel_status(
+                    panel_name,
+                    "failed" if panel_name in {error["panel"] for error in retry_errors} else "completed",
+                    save=False,
+                )
+            usage_delta = {
+                key: int(value) - int(usage_before.get(key, 0))
+                for key, value in client.snapshot_usage().items()
+            }
+            manifest.add_usage(usage_delta, "vlm")
+            manifest.set_stage(
+                "extract",
+                "completed" if fail_count == 0 else "failed",
+                error=None if fail_count == 0 else f"{fail_count} panel(s) failed",
+                save=False,
+            )
+            manifest.save()
+            assembly = assemble_and_validate(pdf_dir, manifest)
+            quality = assembly["report"]
+            print(f"  📝 Reassembled Markdown: {assembly['markdown_path'].name}")
+            print(f"  ✅ Quality gate: {'PASS' if quality['ok'] else 'FAIL'}")
+        except FileNotFoundError:
+            print("  ⚠️  run_manifest.json not found; Markdown reassembly skipped")
+        except Exception as e:
+            print(f"  ⚠️  Markdown reassembly failed: {e}")
 
     return success_count, fail_count, retry_errors
 
@@ -216,9 +223,13 @@ def main():
 
     config = load_config(config_path)
     configure_runtime(config)
-    model = config['model']
-    api_base = config['api_base']
-    api_key = config['api_key']
+    client = VLMClient(
+        model=config["model"],
+        api_base=config["api_base"],
+        api_key=config["api_key"],
+        enable_thinking=config.get("enable_thinking"),
+        max_attempts=max(1, args.max_retries),
+    )
 
     # Load panel prompt
     panel_prompt = load_panel_prompt()
@@ -241,14 +252,17 @@ def main():
     total_skipped = 0
     all_errors = []
 
-    pdf_dirs = sorted([d for d in processed_dir.iterdir() if d.is_dir()])
+    if (processed_dir / "panels_data.json").is_file():
+        pdf_dirs = [processed_dir]
+    else:
+        pdf_dirs = sorted([d for d in processed_dir.iterdir() if d.is_dir()])
 
     if args.pdf:
         # Filter to specific PDFs
         pdf_dirs = [d for d in pdf_dirs if d.name in args.pdf]
 
     for pdf_dir in pdf_dirs:
-        success, fail, errors = process_pdf(pdf_dir, panel_prompt, model, api_base, api_key, args)
+        success, fail, errors = process_pdf(pdf_dir, panel_prompt, client, args)
         total_success += success
         total_fail += fail
         all_errors.extend(errors)
@@ -263,15 +277,6 @@ def main():
 
     if args.dry_run:
         print(f"待处理 | Would retry: {total_success + total_fail}")
-    else:
-        if total_success > 0:
-            print()
-            print("💡 Next steps:")
-            print("   1. Reassemble markdown files if needed:")
-            print("      python examples/assemble_md.py <pdf_dir>")
-            print("   2. Check remaining failures:")
-            print(f"      python examples/check_failures.py {processed_dir}")
-
     if all_errors and args.verbose:
         print()
         print("❌ Failed panels:")
@@ -279,6 +284,9 @@ def main():
             print(f"  - {err['panel']}: {err['error'][:60]}")
         if len(all_errors) > 10:
             print(f"  ... and {len(all_errors) - 10} more")
+
+    if total_fail > 0:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 /test
 /config.yaml
 /examples/__pycache__/
-/tests/
+/tests/__pycache__/
+/local_test/

@@ -80,6 +80,7 @@ python examples/pipeline.py <pdf_path> [options]
 | `--config` | `<skill_dir>/config.yaml` | Path to VLM config file |
 | `--output` / `-o` | `<pdf_name>-with-csv` | Output directory |
 | `--overwrite` | `false` | Replace managed files in a non-empty output directory |
+| `--resume` | `false` | Resume completed Stages and panel checkpoints from `run_manifest.json` |
 | `--filter-size` | `30` | Minimum image size in KB (images smaller than this are discarded as logos/icons) |
 | `--keep-original-images` | `false` | Keep original `pic_*.png` files in `images/` directory (by default they are deleted after panel extraction) |
 
@@ -97,6 +98,9 @@ python examples/pipeline.py paper.pdf --config /path/to/config.yaml
 
 # Rerun into the same directory (replaces previous output)
 python examples/pipeline.py paper.pdf --overwrite
+
+# Resume an interrupted run
+python examples/pipeline.py paper.pdf -o output/ --resume
 
 # Lower the size threshold to keep smaller images
 python examples/pipeline.py paper.pdf --filter-size 10
@@ -117,9 +121,12 @@ A scientific paper PDF (CNS-level, multi-figure, multi-panel).
 output/
 ├── {paper}_complete.md    # Final MD (text + figures + structured data)
 ├── panels_data.json       # Raw CSV extraction results
+├── run_manifest.json      # Durable Stage and panel state
+├── quality_report.json    # Automated quality gate report
+├── docling.md             # Parsed document before figure assembly
 ├── panels/                # Individual panel images (Figure{N}_Panel{X}.png)
 ├── descriptions.json      # VLM-generated captions per panel
 └── images/                # Original extracted images (full figures without panels)
 ```
 
-The `--overwrite` flag only replaces the pipeline's managed files (`images/`, `panels/`, JSON files, and the final Markdown). Other files in the output directory are not touched.
+`--overwrite` and `--resume` are mutually exclusive. The `--overwrite` flag only replaces the pipeline's managed files (`images/`, `panels/`, JSON files, parsed Markdown, and the final Markdown). Other files in the output directory are not touched.

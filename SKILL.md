@@ -50,7 +50,11 @@ pdf2md-skill/
 └── examples/
     ├── pipeline.py           # Reference implementation (~620 lines)
     ├── check_failures.py     # Check for failed panel extractions
-    └── retry_failures.py     # Retry failed panels with VLM API
+    ├── retry_failures.py     # Retry failed panels with VLM API
+    ├── assemble_md.py        # Reassemble Markdown and run quality checks
+    ├── run_manifest.py       # Durable stage and panel checkpoints
+    ├── vlm_client.py         # Deep VLM request/retry/validation module
+    └── resume_step6.py       # Resume an interrupted run from its manifest
 ```
 
 ## References
@@ -65,3 +69,6 @@ pdf2md-skill/
 - `examples/pipeline.py` — Complete reference implementation
 - `examples/check_failures.py` — Check for failed panel extractions
 - `examples/retry_failures.py` — Retry failed panels with parallel processing
+- `examples/assemble_md.py` — Reassemble Markdown and run quality checks
+- `examples/run_manifest.py` — Persist restartable pipeline state
+- `examples/vlm_client.py` — Centralize VLM retries, response handling, and JSON validation

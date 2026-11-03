@@ -26,6 +26,9 @@ Before running the pipeline, ensure:
 ```bash
 conda activate pdf2md
 python examples/pipeline.py /path/to/paper.pdf
+
+# Resume an interrupted run from run_manifest.json
+python examples/pipeline.py /path/to/paper.pdf -o output/ --resume
 ```
 
 The reference implementation is `examples/pipeline.py`. For CLI options, see the [config skill](../config/SKILL.md#cli-parameters).
@@ -37,6 +40,7 @@ The reference implementation is `examples/pipeline.py`. For CLI options, see the
 Process entire PDF in one pass. Single-pass preserves table structure context.
 - Requires ~16GB RAM for papers up to 20 pages
 - This implementation has no automatic low-memory fallback. If OOM occurs, stop and split the input PDF before rerunning.
+- Docling `partial_success`, `failure`, or `skipped` statuses mark the `parse` Stage as failed; do not continue with an incomplete document.
 
 ### Step 2: Image Filtering
 
@@ -68,6 +72,8 @@ VLM re-extracts tables that docling marked as "bad" (dot-pattern, no readable te
 
 VLM applies the 9-rule classification prompt (see `references/figure_rules.md`).
 Output: JSON Array per panel with `fig_type`, `data_type`, `content`.
+- Each completed panel is checkpointed atomically to `panels_data.json` and `run_manifest.json`.
+- On `--resume`, valid panel results are reused and only missing or failed panels are retried.
 
 The 9 rules classify figures into:
 1. No-extract (qualitative images, schematics)
@@ -86,8 +92,20 @@ Insert figure panels + structured data at `<!-- image -->` placeholders. Replace
 - Panels are renamed to `Figure{N}_Panel{X}.png`
 - Full images (no panels detected) are named `Figure{N}_full.png`
 - Bad tables are replaced with VLM-extracted Markdown tables
+- `examples/assemble_md.py` is the single assembler used by both normal runs and retries.
+- A quality gate writes `quality_report.json` and checks image links, unresolved placeholders, panel results, descriptions, and error entries.
 
 Use a new or empty output directory. Pass `--overwrite` only when replacing this pipeline's managed outputs from an earlier run.
+
+## Run State and Resume
+
+Every run writes `run_manifest.json`. It records the PDF SHA-256, Stage status, parsed document, filtered pictures, figure/panel mapping, extracted tables, panel checkpoints, and VLM usage.
+
+- Completed Stages are skipped when `--resume` is used.
+- Stage 6 writes a checkpoint after each panel.
+- The PDF hash must match the existing run.
+- `--overwrite` and `--resume` are mutually exclusive.
+- `examples/resume_step6.py output/` is a convenience wrapper around `pipeline.py --resume`.
 
 ## Quality Checks
 
@@ -99,6 +117,7 @@ After generating the output MD, verify:
 4. **Figure count**: All figures and panels correctly inserted
 5. **CSV quality**: Spot-check 2-3 panels for correct data_type and content
 6. **Table headers**: Paper's own tables have proper headers (not just numbers)
+7. **Automated gate**: Confirm `quality_report.json` has `"ok": true`
 
 ## Failure Strategies
 
@@ -107,7 +126,8 @@ After generating the output MD, verify:
 | VLM API 400 error | Record as error, continue with remaining panels |
 | JSON parse failure | Record as error entry, skip that panel |
 | OOM (`std::bad_alloc`) | Stop; use more memory or split the input PDF before rerunning |
-| Network timeout | Record the failed VLM result; fix connectivity and rerun |
+| Network timeout | VLMClient retries with exponential backoff; then record the failed panel |
+| Malformed JSON | VLMClient validates the JSON array schema and retries the request |
 | Figure misclassified | Iterate on prompt rules in `references/figure_rules.md` |
 
 **Expected error rates**: ~10% VLM 400 errors, ~3-5% JSON parse failures. These are normal.
@@ -136,6 +156,8 @@ After running the standard pipeline, the agent MUST automatically:
    ```
 
 4. **If still failures, retry again (up to 3 times total) | 如果仍有失败，再次重试（最多 3 次）**
+
+`retry_failures.py` automatically reassembles the final Markdown and reruns the quality gate after successful repairs.
 
 ### Agent Instructions | 智能体指令
 
@@ -182,6 +204,10 @@ Agent:
 | `examples/pipeline.py` | Complete reference implementation (single-pass, CLI arguments) |
 | `examples/check_failures.py` | Check for failed panel extractions |
 | `examples/retry_failures.py` | Retry failed panels with parallel processing |
+| `examples/assemble_md.py` | Unified Markdown assembly and quality gate |
+| `examples/run_manifest.py` | Durable Stage and panel state |
+| `examples/vlm_client.py` | Centralized VLM retries, response normalization, and JSON validation |
+| `examples/resume_step6.py` | Resume a run from `run_manifest.json` |
 | `references/figure_rules.md` | 9-rule panel classification prompt (Chinese) |
 | `references/architecture.md` | Implementation details (text truncation fix, VLM response handling, memory management) |
 | `references/troubleshooting.md` | Problem-solution lookup table |

@@ -66,7 +66,8 @@ python examples/retry_failures.py ~/PDFs/processed/Tang_2025/
 ### 2. 智能重试
 
 - 从 `descriptions.json` 获取 panel 的 caption
-- 重新调用 VLM API 进行 CSV 提取
+- 通过统一的 `VLMClient` 重新调用 VLM API
+- 自动处理指数退避、429/5xx、空响应和非法 JSON
 - 使用相同的 9-rule prompt
 - 自动更新 `panels_data.json`
 
@@ -76,6 +77,9 @@ python examples/retry_failures.py ~/PDFs/processed/Tang_2025/
 - 请求间隔避免 API 限流
 - 详细的错误日志
 - 跳过已成功的 panels
+- 更新 `run_manifest.json` 中的面板状态和 VLM 用量
+- 修复成功后自动调用 `assemble_md.py` 重建 Markdown
+- 自动重跑 `quality_report.json` 对应的质量门禁
 
 ## 命令行参数
 
@@ -161,7 +165,8 @@ python examples/check_failures.py output/
 # 3. 如果有失败，运行重试
 python examples/retry_failures.py output/
 
-# 4. 重新生成 Markdown（如果 panels_data.json 更新了）
+# 4. 重试脚本会自动重建 Markdown；
+#    也可以单独运行质量检查与重组：
 python examples/assemble_md.py output/
 ```
 
@@ -171,7 +176,7 @@ python examples/assemble_md.py output/
 - 建议先使用 `--dry-run` 检查
 - 大量失败时建议使用并行模式
 - 网络不稳定时可增加 `--delay` 参数
-- 重试后需要重新组装 Markdown 文件
+- 新版本重试成功后会自动重新组装 Markdown，不需要手动执行
 
 ## 故障排除
 
@@ -199,6 +204,8 @@ python examples/assemble_md.py output/
 - `examples/retry_failures.py` - 重试脚本
 - `examples/check_failures.py` - 检查脚本
 - `examples/assemble_md.py` - Markdown 重组脚本
+- `examples/run_manifest.py` - 持久化运行状态
+- `examples/vlm_client.py` - 统一 VLM 请求与重试
 - `config.yaml` - VLM API 配置
 - `references/figure_rules.md` - 9-rule prompt
 
